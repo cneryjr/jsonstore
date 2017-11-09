@@ -1,4 +1,4 @@
-var jsonfs = require("jsonfs")
+var jsonfs = require("jsonstore")
 
 function plain_object(obj, path) {
     var rs = {}
