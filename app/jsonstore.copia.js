@@ -8,10 +8,8 @@
 // var FileOutputStream  = Java.type("java.io.FileOutputStream")
 // var ByteBuffer = Java.type("java.nio.ByteBuffer")
 // var JString = Java.type("java.lang.String")
-var System = Java.type("java.lang.System")
 var Files  = Java.type("java.nio.file.Files")
 var Paths = Java.type("java.nio.file.Paths")
-var FileChannel = Java.type("java.nio.channels.FileChannel")
 var StandardOpenOption = Java.type("java.nio.file.StandardOpenOption")
 
 
@@ -28,23 +26,6 @@ function ObjectId() {
     return s(d.now() / 1000) + " ".repeat(h).replace(/./g, function () {
         return s(m.random() * h)
     })
-}
-
-
-function combine(rs, key) {
-    var path = key.split(".")
-    var last = rs
-    var ak
-
-    while (path.length > 1) {
-        ak = path.shift()
-        last[ak] = last[ak] || {}
-        last = last[ak]
-    }
-
-    ak = path.shift()
-    last[ak] = rs[key]
-    delete rs[key]
 }
 
 
@@ -69,14 +50,6 @@ function plain_object_SEM_PERFORMANCE(obj, path) {
 }
 
 
-function plainAndStringifyObject(value, key) {
-    var plained = plain_object(value, key)
-    return Object.keys(plained).reduce(function (previous, depthKey) {
-        return previous + depthKey + ":" + plained[depthKey] + "\r\n"
-    }, "")        
-}
-
-
 function plain_object(obj, path) {
     var rs = {}
    
@@ -96,34 +69,28 @@ function plain_object(obj, path) {
 }
 
 
-function parseRecord(plainedRecord) { 
-    // var plainedRecord = recc
-    var rec = plainedRecord.replace(/^\u001F|\u001F$/g, "").split("\u001F")
-    var rs = {}
+function plainAndStringifyObject(value, key) {
+    var plained = plain_object(value, key)
+    return Object.keys(plained).reduce(function (previous, depthKey) {
+        return previous + depthKey + ":" + plained[depthKey] + "\r\n"
+    }, "")        
+}
 
-    rec.forEach(function(keyValue) {
-        var kv = keyValue.split(":")
-        var key = kv.shift()
-        var value = kv.join(":")
 
-        var path = key.split(".")
-        var last = rs
-        var ak
-    
-        while (path.length > 1) {
-            ak = path.shift()
-            last[ak] = last[ak] || {}
-            last = last[ak]
-        }
+function combine(rs, key) {
+    var path = key.split(".")
+    var last = rs
+    var ak
 
+    while (path.length > 1) {
         ak = path.shift()
-        last[ak] = value
-        // delete rs[key]
-    })
-    
-    // show("RS => ", rs)
+        last[ak] = last[ak] || {}
+        last = last[ak]
+    }
 
-    return rs
+    ak = path.shift()
+    last[ak] = rs[key]
+    delete rs[key]
 }
 
 
@@ -153,49 +120,40 @@ function set(dbs, key, value) {
     // dbs.channel.truncate(size)
 }
 
-
-function insert(dbs, data) {
+function insert(dbs, key, value) {
     var out = dbs.out
-    var plained = plain_object(data)
+    var keyValueLine
+    // var k = key + ":"
+    // var size = 0;
+    // var size = dbs.channel.size()
+    // var len = 0
 
-    var line = Object.keys(plained).reduce(function (previous, key) {
-        return previous + key + ":" + plained[key] + "\u001f"
-    }, "\u001f")
+    // dbs.channel.position(size)
 
-    line += "\r\n"
-    out.append(line, 0, line.length)
+    keyValueLine = (typeof(value) !== "object")
+        ? [key,":",value,"\r\n"].join("")
+        : plainAndStringifyObject(value, key)
+
+    // size += (len = keyValueLine.length)
+    out.append(keyValueLine, 0, keyValueLine.length)
     out.flush()
     // out.close()
     // dbs.channel.truncate(size)
 }
 
 
-function store(dbs, data) {
+function store(dbs, dataObject) {
     var out = dbs.out
-    var plained
-    var line
-    
-    if (Array.isArray(data)) {
-        data.forEach(function (obj) {
-            var record = []
+    var size = 0
+    var plained = plain_object(dataObject)
+    // var data = plainAndStringifyObject(dataObject) 
 
-            plained = plain_object(obj)
+    Object.keys(plained).forEach(function (key) {
+        var data = key + ":" + plained[key] + "\r\n"
+        size += data.length
+        out.write(data, 0, data.length)
+    })  
 
-            Object.keys(plained).forEach(function (key) {
-                record.push( key + ":" + plained[key] )
-            })
-
-            line = "\u001f" + record.join("\u001f") + "\r\n"
-            out.write(line, 0, line.length)
-        }) 
-    } else if (typeof(data) === "object") {
-        plained = plain_object(data)
-        Object.keys(plained).forEach(function (key) {
-            line = [key, ":", plained[key], "\r\n"].join("")
-            out.write(line, 0, line.length)
-        })
-    }
- 
     out.close()
     // dbs.channel.truncate(size)
 }
@@ -224,7 +182,7 @@ function get(path, key) {
 }
 
 // find("*.first_name", "Eddi")
-function findx(path, criteria, value, fnc) {
+function find(path, criteria, value, fnc) {
     var re = new RegExp("(.*?\\.)" + criteria, "i")    
     var stream = Files.lines(path)
     var rs = []
@@ -246,99 +204,23 @@ function findx(path, criteria, value, fnc) {
         }
     }) 
 
+    // stream.filter(function(line) {
+    //     return line.match(re) !== null
+    // }).forEach(function(line) {
+    //     var kv = line.split(":")
+    //     var k = kv.shift()
+
+    //     rs[k] = kv.join(":")
+
+    //     if (k.contains(".")) {
+    //         combine(rs, k)
+    //     } 
+    // })
+
     rs.length = count
 
     return rs
 }
-
-
-function find(dbs, criteria, value, fnc) {
-    var expr = "\u001f" +  criteria + ":" + value
-    // var re = new RegExp(".*?" + criteria + ":" + value, "i")
-    var path = dbs.path   
-    var stream = Files.lines(path)
-    var rs = []
-    // var count = 0
-    // var found = 0
-
-    stream.forEach(function (line) {
-        if (line.indexOf(expr) > -1) {
-            // rs.push(found++)
-            rs.push(line)
-        }
-        // System.out.print(" " + (count++) + " / " + found + "                       \r")
-    }) 
-
-    // return rs
-    return {
-        toArray: (function(rs) {
-            return rs.map(parseRecord)
-        }).bind(null, rs),
-
-        forEach: (function(rs, cb_fnc, scope) {
-            // rs.map(parseRecord).forEach(cb_fnc, scope)
-            for(var i = 0, len = rs.length; i < len; ++i) {
-                cb_fnc.call(scope, parseRecord(rs[i]), i, null)
-            }
-
-        }).bind(null,rs)
-    }
-}
-
-
-function find_chnn(dbs, criteria, value, fnc) {
-    var expr = "\u001f" +  criteria + ":" + value
-    var rs = []
-    var count = 0
-    var found = 0
-    var line
-
-    function readline(buffer) {
-        var linha = []
-        var ch = buffer.get()
-
-        while ((buffer.position() < buffer.limit()) && ch != 13 && ch != 10) {
-            // System.out.println("" + ch + ",")
-            linha.push(ch)
-            // String.fromCharCode.apply(null,[78,79,80,81])
-            ch = buffer.get()
-        }
-
-        if (ch == 10)
-            linha.push(buffer.getChar)
-
-        return String.fromCharCode.apply(null, linha)
-    }
-
-    var channel = Files.newByteChannel(dbs.path, StandardOpenOption.READ)
-    var buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
-
-    System.out.println(buffer.isLoaded());  //prints false
-    buffer.load();
-    System.out.println(buffer.isLoaded());  //prints false
-    System.out.println(buffer.capacity());  //Get the size based on content size of file
-
-    while (buffer.position() < buffer.limit()) {
-        // System.out.print(String.fromCharCode( buffer.get()) ) //Print the content of file
-        line = readline(buffer)
-        // System.out.println(line.substring(0,30) + "                                                     \r")
-        
-        var m = line.indexOf(expr)
-        
-        if (m > -1) {
-            rs.push(found++)
-        }
-
-
-            System.out.print(" " + count + " / " + ch + "                                                     \r")
-    }
-
-    buffer.clear()
-    channel.close()
-
-    return rs
-}
-
 
 function close(dbs) {
     dbs.in.close()
@@ -369,30 +251,20 @@ function jsonfs(filePathName, charset) {
         if (e.printStackTrace)
             e.printStackTrace()
         throw "Unable to read file at: " + filePath + ", " + e
-
-        return null
     }
 
-    var dbs = {
-        path: filePath,
-        channel: chn, 
-        "in": inp, 
-        "out": out
-    }
-
-    var fncStore = store.bind(null, dbs)
-    var fncSet = set.bind(null, dbs)
+    var fncStore = store.bind(null, {channel: chn, "in": inp, "out": out})
+    var fncSet = set.bind(null, {channel: chn, "in": inp, "out": out})
     var fncGet = get.bind(null, Paths.get(filePathName))
     
     return {
         plainAndStringifyObject: plainAndStringifyObject,
-        close: close.bind(null, dbs),
+        close: close.bind(null, {channel: chn, "in": inp, "out": out}),
         store: fncStore,
         get: fncGet,
         set: fncSet,
-        // find: find.bind(null, Paths.get(filePathName)),
-        find: find.bind(null, dbs),
-        insert: insert.bind(null, dbs)
+        find: find.bind(null, Paths.get(filePathName)),
+        insert: insert.bind(null, {channel: chn, "in": inp, "out": out})
     }
 }
 
